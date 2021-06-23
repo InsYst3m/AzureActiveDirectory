@@ -1,12 +1,15 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Identity.Client;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security;
 using System.Threading.Tasks;
 
-namespace Console.ConfidentialClient
+namespace Console.PublicClient
 {
     public class Program
     {
@@ -38,26 +41,42 @@ namespace Console.ConfidentialClient
 
         private static async Task<AuthenticationResult> AuthenticateApplicationAsync(AzureActiveDirectoryOptions options)
         {
-            IConfidentialClientApplication application =
-                ConfidentialClientApplicationBuilder.Create(options.ClientId)
-                                                    .WithClientSecret(options.ClientSecret)
-                                                    .WithAuthority(options.Authority)
-                                                    .Build();
+            IPublicClientApplication application =
+                PublicClientApplicationBuilder.Create(options.ClientId)
+                                              .WithB2CAuthority(options.Authority)
+                                              .Build();
 
             string[] scopes =
             {
                 options.Scope
             };
 
-            AuthenticationResult authenticationResult = null;
+            AuthenticationResult authenticationResult = await GetAzureActiveDirectoryTokenByCredentialsAsync(application, scopes);
 
-            try
+            return authenticationResult;
+        }
+
+        private static async Task<AuthenticationResult> GetAzureActiveDirectoryTokenByCredentialsAsync(IPublicClientApplication application, string[] scopes)
+        {
+            SecureString password = new();
+            AuthenticationResult authenticationResult = null;
+            List<IAccount> accounts = await application.GetAccountsAsync() as List<IAccount>;
+
+            if (accounts.Any())
             {
-                authenticationResult = await application.AcquireTokenForClient(scopes).ExecuteAsync();
+                try
+                {
+                    authenticationResult = await application.AcquireTokenSilent(scopes, accounts.FirstOrDefault()).ExecuteAsync();
+                }
+                catch (Exception ex)
+                {
+                    // log exception
+                }
             }
-            catch (Exception ex)
+
+            if (authenticationResult is null)
             {
-                // log exception
+                authenticationResult = await application.AcquireTokenByUsernamePassword(scopes, "username", password).ExecuteAsync();
             }
 
             return authenticationResult;
